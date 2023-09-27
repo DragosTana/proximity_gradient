@@ -1,144 +1,165 @@
 import numpy as np
 import scipy.optimize as opt
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.datasets import make_classification
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression as LR
+from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
+from sklearn.svm._base import _fit_liblinear
 
-def compute_loss(data: np.array, labels: np.array, weights: np.array, regularization: str = None) -> float:
+from _loss import LossLogisticRegression
+import _utils as u
+
+class MyLogisticRegression(BaseEstimator, ClassifierMixin):
     """
-    Computes the logistic loss of the data given the weights.
+    Logistic Regression classifier.
     
     ## Parameters:
-    data: np.array
-        The data to be used for computing the loss.
-    labels: np.array
-        The labels of the data.
-    weights: np.array
-        The weights to be used for computing the loss.
-    regularization: str
-        The type of regularization to be used. Can be "l1", "l2", or "none".
+    penalty : str, 'l1' or 'l2', default: 'l2'
+        Used to specify the norm used in the penalization. 
         
-    ## Returns:
-    loss: float
-        The logistic loss of the data given the weights.
-    """
-    if regularization == "l1":
-        return np.sum(np.log(1 + np.exp(-np.multiply(labels, np.dot(data, weights))))) + np.sum(np.abs(weights))
-    elif regularization == "l2":
-        return np.sum(np.log(1 + np.exp(-np.multiply(labels, np.dot(data, weights))))) + np.sum(np.square(weights))
-    elif regularization == "none":
-        return np.sum(np.log(1 + np.exp(-np.multiply(labels, np.dot(data, weights)))))
-    else:
-        raise ValueError("Invalid regularization parameter.")
+    C : float, default: 1.0
+        Inverse of regularization strength; must be a positive float. 
+        Like in support vector machines, smaller values specify stronger regularization.
+        
+    fit_intercept : bool, default: True
+        Specifies if a constant (a.k.a. bias or intercept) should be added to the decision function.
+        
+    solver : {'lbfgs', 'liblinear', 'proximal_gra'}, default: 'lbfgs'
+        Algorithm to use in the optimization problem.
+        
+        ..warning::
+            The choice of the solver depends on the penalty chosen.
+            Supported penalties by solver are:
+            
+                - 'lbfgs'           -   'l2', None
+                - 'liblinear'       -   'l1', 'l2'
+                - 'proximal_grad'   -   'l1'
     
-def compute_loss_gradient():
-    pass
-
-def loss(weights: np.array, data: np.array, labels: np.array ) -> float:
-    return np.sum(np.log(1 + np.exp(-np.multiply(labels, np.dot(data, weights))))) + np.sum(np.square(weights))
-    
-class LogisticRegression:
-    """
-    Logistic regression model.
+    maxc_iter : int, default: 100
+        Maximum number of iterations taken for the solvers to converge.
+        
+    tol : float, default: 1e-4
+        Tolerance for stopping criteria.
+        
+    verbose : int, default: 0
+        For the liblinear and lbfgs solvers set verbose to any positive number for verbosity.
     """
     
-    def __init__(self) -> None:
-        self.weights = None
-        
-    def fit(self, data: np.array, labels: np.array) -> None:
-        """
-        Fits the logistic regression model to the data.
-        
-        ## Parameters:
-        data: np.array
-            The data to be used for fitting the model.
-        labels: np.array
-            The labels of the data.
-        """
-        
-        # Initialize weights
-        self.weights = np.zeros(data.shape[1])
-        
-        # Optimize weights
-        self.weights = opt.minimize(loss, self.weights, args=(data, labels), method="L-BFGS-B", tol=0.0001).x
-        
-    def predict(self, data: np.array) -> np.array:
-        """
-        Predicts the labels of the data.
-        
-        ## Parameters:
-        data: np.array
-            The data to be used for prediction.
-        
-        ## Returns:
-        predictions: np.array
-            The predicted labels.
-        """
-        return np.sign(np.dot(data, self.weights))
-    
-class LogisticRegression2(BaseEstimator, ClassifierMixin):
-    def __init__(self, alpha=0.01, max_iter=10000000, tol=1e-9):
-        self.alpha = alpha
+    def __init__(
+        self,
+        penalty='l2',
+        C=1.0,
+        fit_intercept=True,
+        solver='lbfgs',
+        max_iter=100,
+        tol=1e-4,
+        verbose=0,
+    ):
+        self.penalty = penalty
+        self.C = C
+        self.fit_intercept = fit_intercept
+        self.solver = solver
         self.max_iter = max_iter
         self.tol = tol
+        self.verbose = verbose
         self.coef_ = None
-
-    def sigmoid(self, z):
-        return 1 / (1 + np.exp(-z))
-
-    def loss(self, theta, X, y):
-        m = len(y)
-        h = self.sigmoid(X @ theta)
-        epsilon = 1e-5  # for numerical stability
-        loss = (-1 / m) * (y.T @ np.log(h + epsilon) + (1 - y).T @ np.log(1 - h + epsilon))
-        return loss
-
-    def gradient(self, theta, X, y):
-        m = len(y)
-        h = self.sigmoid(X @ theta)
-        grad = (1 / m) * X.T @ (h - y)
-        return grad
-
+        
     def fit(self, X, y):
-        X = np.c_[np.ones((X.shape[0], 1)), X]  # Add bias term
-        n_samples, n_features = X.shape
-        self.coef_ = np.zeros(n_features)
-
-        # Minimize the loss function using scipy's minimize
-        res = opt.minimize(fun=self.loss, x0=self.coef_, args=(X, y), method="L-BFGS-B", jac = self.gradient, tol=self.tol)
-
-        self.coef_ = res.x[1:]  # Exclude the bias term
-        self.intercept_ = res.x[0]  # Set the bias term
-
-        return self
-
+        """
+        Fit the model according to the given training data.
+        
+        ## Parameters:
+        X : array-like of shape (n_samples, n_features)
+            Training vector, where n_samples is the number of samples and n_features is the number of features.
+            
+        y : array-like of shape (n_samples,)
+            Target vector relative to X.
+            
+        ## Returns:
+        self : object
+            Returns self, fitted estimator.
+        """
+        
+        solver = u._check_solver(self.solver, self.penalty)
+        X, y = check_X_y(X, y, accept_sparse='csr', order="C", dtype=np.float64)
+        
+        self.classes_ = np.unique(y)
+        n_classes = len(self.classes_)
+        classes_ = self.classes_
+        if n_classes < 2:
+            raise ValueError(
+                "This solver needs samples of at least 2 classes"
+                " in the data, but the data contains only one"
+                " class: %r"
+                % classes_[0]
+            )
+            
+        loss = LossLogisticRegression(C=self.C, penalty=self.penalty)
+        fun = loss._total_loss
+        grad = loss._gradient
+            
+        if solver == 'lbfgs':
+            optimizer = opt.minimize(
+                fun=fun,
+                x0=np.zeros(X.shape[1]),
+                args=(X, y),
+                method='L-BFGS-B',
+                jac=grad,
+                tol=self.tol,
+                options={
+                    'maxiter': self.max_iter,
+                    'disp': self.verbose
+                }
+            )
+            self.coef_ = optimizer.x
+            self.n_iter_ = optimizer.nit
+        elif solver == 'liblinear':
+            pass
+        elif solver == 'proximal_grad':
+            pass
+            
     def predict(self, X):
-        X = np.c_[np.ones((X.shape[0], 1)), X]  # Add bias term
-        return (self.sigmoid(X @ np.concatenate(([self.intercept_], self.coef_))) >= 0.5).astype(int)
-
-    def predict_proba(self, X):
-        X = np.c_[np.ones((X.shape[0], 1)), X]  # Add bias term
-        return self.sigmoid(X @ np.concatenate(([self.intercept_], self.coef_)))
-    
-def main():
-    X, y = make_classification(n_samples=10000, n_features=2, n_informative=2, n_redundant=0, n_repeated=0, n_classes=2, n_clusters_per_class=2, weights=None, flip_y=0.01, class_sep=1.0, hypercube=True, shift=0.0, scale=1.0, shuffle=True, random_state=None)
-    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-    logistic_regression = LR(penalty = 'l2', solver = 'lbfgs', max_iter = 10000000)
-    logistic_regression.fit(X, y)
-    
-    my_logistic_regression = LogisticRegression2()
-    my_logistic_regression.fit(X, y)
-
-    print("Sklearn LOSS: ", loss(x_train, y_train, logistic_regression.coef_))
-    print("My LOSS: ", loss(x_train, y_train, my_logistic_regression.coef_))
-    print("Weights: ", logistic_regression.coef_)
-    print("My weights: ", my_logistic_regression.coef_)
-    print("Sklearn accuracy: ", logistic_regression.score(x_test, y_test))
-    print("My accuracy: ", np.mean(my_logistic_regression.predict(x_test) == y_test))
-    print(" ")
-    
+        """
+        Predict class labels for samples in X.
+        
+        ## Parameters:
+        X : array-like of shape (n_samples, n_features)
+            Samples.
+        """
+        check_is_fitted(self)
+        X = check_array(X, accept_sparse='csr', order="C")
+        
+        y_pred = np.dot(X, self.coef_.T)
+        y_pred = np.sign(y_pred)
+        y_pred[y_pred == -1] = 0
+        return y_pred
+            
+            
+            
 if __name__ == "__main__":
-    #set seed
-    for i in range(5):
-        main()
+    from sklearn.datasets import make_classification
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import accuracy_score
+    from sklearn.linear_model import LogisticRegression
+    from time import time
+    
+    X, y = make_classification(50000, n_features=10, n_informative=5, n_redundant=0, n_repeated=0, n_classes=2)
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
+    
+    lr = LogisticRegression(penalty='l2', C=1.0, solver='lbfgs', max_iter=1000, tol=1e-4, verbose=0)
+    my_lr = MyLogisticRegression(penalty='l2', C=1.0, solver='lbfgs', max_iter=1000, tol=1e-4, verbose=0)
+    
+    start = time()
+    lr.fit(X_train, y_train)
+    print("Sklearn time: ", time() - start)
+    
+    y_train[y_train == 0] = -1
+    start = time()
+    my_lr.fit(X_train, y_train)
+    print("My time: ", time() - start)
+    
+    my_y_pred = my_lr.predict(X_test)
+    y_pred = lr.predict(X_test)
+    
+    print("My accuracy: ", accuracy_score(y_test, my_y_pred))
+    print("Sklearn accuracy: ", accuracy_score(y_test, y_pred))
+    
