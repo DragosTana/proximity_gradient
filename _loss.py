@@ -61,5 +61,4 @@ class LossLogisticRegression:
             reg_grad = self.C * coef
 
         total_grad = np.dot(X.T, grad_log_loss) + reg_grad
-
         return total_grad

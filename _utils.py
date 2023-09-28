@@ -1,18 +1,23 @@
 import numpy as np
 
-def _check_solver(solver, penalty):
-    if solver == 'lbfgs' and penalty not in ['l2', None]:
+def _check_solver(solver, penalty, dual):
+    
+    if solver not in ["liblinear"] and penalty not in ("l2", "none", None):
         raise ValueError(
-            "Solver lbfgs supports only 'l2' or None penalties, got %s penalty."
-            % penalty   )
-    if solver == 'liblinear' and penalty not in ['l1', 'l2']:
+            "Solver %s supports only 'l2' or 'none' penalties, got %s penalty."
+            % (solver, penalty)
+        )
+    if solver != "liblinear" and dual:
         raise ValueError(
-            "Solver liblinear supports only 'l1' or 'l2' penalties, got %s penalty."
-            % penalty   )
-    if solver == 'proximal_grad' and penalty not in ['l1']:
+            "Solver %s supports only dual=False, got dual=%s" % (solver, dual)
+        )
+    
+    if solver == "proximal_grad" and penalty not in ("l1"):
         raise ValueError(
-            "Solver proximal_grad supports only 'l1' penalty, got %s penalty."
-            % penalty   )
+            "Solver %s supports only 'l1' penalty, got %s penalty."
+            % (solver, penalty)
+        )
+        
     return solver
 
 def sigmoid(x):

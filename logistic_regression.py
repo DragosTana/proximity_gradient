@@ -1,3 +1,6 @@
+# Author: Dragos Tanasa
+# Description: Implementation of Logistic Regression classifier compatible with sklearn.
+
 import numpy as np
 import scipy.optimize as opt
 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -5,6 +8,7 @@ from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.svm._base import _fit_liblinear
 
 from _loss import LossLogisticRegression
+from proximal_grad import proximal_gradient
 import _utils as u
 
 class MyLogisticRegression(BaseEstimator, ClassifierMixin):
@@ -32,7 +36,10 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                 - 'lbfgs'           -   'l2', None
                 - 'liblinear'       -   'l1', 'l2'
                 - 'proximal_grad'   -   'l1'
-    
+                
+    dual : bool, default: False
+        Dual or primal formulation. Dual formulation is only implemented for l2 penalty with liblinear solver.
+        
     maxc_iter : int, default: 100
         Maximum number of iterations taken for the solvers to converge.
         
@@ -49,6 +56,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
         C=1.0,
         fit_intercept=True,
         solver='lbfgs',
+        dual=False,
         max_iter=100,
         tol=1e-4,
         verbose=0,
@@ -57,6 +65,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
         self.C = C
         self.fit_intercept = fit_intercept
         self.solver = solver
+        self.dual = dual
         self.max_iter = max_iter
         self.tol = tol
         self.verbose = verbose
@@ -78,7 +87,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             Returns self, fitted estimator.
         """
         
-        solver = u._check_solver(self.solver, self.penalty)
+        solver = u._check_solver(self.solver, self.penalty, self.dual)
         X, y = check_X_y(X, y, accept_sparse='csr', order="C", dtype=np.float64)
         
         self.classes_ = np.unique(y)
@@ -111,10 +120,38 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             )
             self.coef_ = optimizer.x
             self.n_iter_ = optimizer.nit
+            
         elif solver == 'liblinear':
-            pass
+            self.coef_, self.intercept_, self.n_iter_ = _fit_liblinear(
+                X = X,
+                y = y,
+                C = self.C,
+                fit_intercept = self.fit_intercept,
+                intercept_scaling = 1,
+                class_weight = None,
+                penalty = self.penalty,
+                dual = False,
+                verbose = self.verbose,
+                max_iter = self.max_iter,
+                tol = self.tol,
+                random_state = None,
+                multi_class = 'ovr',
+                loss = 'logistic_regression',
+                epsilon = 1e-4,
+                sample_weight = None,
+            )
+            
         elif solver == 'proximal_grad':
-            pass
+            self.coef_, self.intercept_, self.n_iter_ = proximal_gradient(
+                X,
+                y,
+                self.C,
+                self.penalty,
+                self.fit_intercept,
+                self.max_iter,
+                self.tol
+            )
+                
             
     def predict(self, X):
         """
@@ -145,8 +182,8 @@ if __name__ == "__main__":
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
     
-    lr = LogisticRegression(penalty='l2', C=1.0, solver='lbfgs', max_iter=1000, tol=1e-4, verbose=0)
-    my_lr = MyLogisticRegression(penalty='l2', C=1.0, solver='lbfgs', max_iter=1000, tol=1e-4, verbose=0)
+    lr = LogisticRegression(penalty='l1', C=1.0, solver='liblinear', max_iter=1000, tol=1e-4, verbose=0)
+    my_lr = MyLogisticRegression(penalty='l1', C=1.0, solver='liblinear', max_iter=1000, tol=1e-4, verbose=0)
     
     start = time()
     lr.fit(X_train, y_train)
