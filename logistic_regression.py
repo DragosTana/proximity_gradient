@@ -178,12 +178,12 @@ if __name__ == "__main__":
     from sklearn.linear_model import LogisticRegression
     from time import time
     
-    X, y = make_classification(50000, n_features=10, n_informative=5, n_redundant=0, n_repeated=0, n_classes=2)
+    X, y = make_classification(10000, n_features=60, n_informative=60, n_redundant=0, n_repeated=0, n_classes=2)
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
     
-    lr = LogisticRegression(penalty='l1', C=1.0, solver='liblinear', max_iter=1000, tol=1e-4, verbose=0)
-    my_lr = MyLogisticRegression(penalty='l1', C=1.0, solver='liblinear', max_iter=1000, tol=1e-4, verbose=0)
+    lr = LogisticRegression(penalty='l2', C=1.0, solver='liblinear', max_iter=1000, tol=1e-4, verbose=0)
+    my_lr = MyLogisticRegression(penalty='l2', C=1.0, solver='liblinear', max_iter=1000, tol=1e-4, verbose=0)
     
     start = time()
     lr.fit(X_train, y_train)

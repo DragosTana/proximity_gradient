@@ -1,6 +1,7 @@
 import numpy as np
-from scipy.special import expit
 from numba import jit, prange
+from sklearn.metrics import log_loss
+from scipy.special import xlogy, expit
 
 class LossLogisticRegression:
     """
@@ -13,28 +14,39 @@ class LossLogisticRegression:
         Like in support vector machines, smaller values specify stronger regularization.
     penalty : str, 'l1' or 'l2', default: 'l2'
         Used to specify the norm used in the penalization.
+    normalize : bool, default: False
+        If True, the loss is normalized by the number of samples.
     """
     def __init__(
         self, 
         C=1.0, 
-        penalty="l2"
+        penalty="l2",
+        normalize=False
         ):
         self.C = C  
         self.penalty = penalty  
         self.coef_ = None  
-
+        self.normalize = normalize
 
     def _logistic_loss(self, X, y, coef): 
-        z = np.dot(X, coef.T)
-        log_loss = np.sum(np.log(1 + np.exp(-y * z)))
-        return log_loss
+        z = (X @ coef.T).ravel()
+        expit(z, out=z)
+        loss = -(xlogy(y, z) + xlogy(1 - y, 1 - z)).sum() 
+        if self.normalize:
+            self.n = len(y)
+            loss /= self.n
+        return loss
 
     def _l1_regularization(self, coef):
         l1_loss = np.sum(np.abs(coef))
+        if self.normalize:
+            l1_loss /= self.n
         return l1_loss
     
     def _l2_regularization(self, coef):
         l2_loss = 0.5 * np.sum(coef**2)
+        if self.normalize:
+            l2_loss /= self.n
         return l2_loss
 
     def _total_loss(self, coef, X, y):
@@ -62,3 +74,29 @@ class LossLogisticRegression:
 
         total_grad = np.dot(X.T, grad_log_loss) + reg_grad
         return total_grad
+    
+if __name__ == "__main__":
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.datasets import make_classification
+    from sklearn.model_selection import train_test_split
+    from time import time
+    
+    
+    X, y = make_classification(100, n_features=2, n_informative=2, n_redundant=0, n_repeated=0, n_classes=2)
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    
+    lr = LogisticRegression(penalty = "l2", C=1.0, solver="saga", max_iter=1000)
+    lr.fit(X_train, y_train)
+    
+    loss = LossLogisticRegression(C=1.0)
+    
+    y_pred = lr.predict_proba(X_test)
+    
+    print("sklearn log loss: ", log_loss(y_test, lr.predict_proba(X_test), normalize=False))
+    loss = loss._logistic_loss(X_test, y_test, lr.coef_)
+    print("LossLogisticRegression log loss: ", loss)
+  
+    
+    
+    

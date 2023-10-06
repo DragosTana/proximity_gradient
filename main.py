@@ -6,7 +6,7 @@ import time
 lib = ctypes.CDLL('./fast_proximal_grad/matmul.so')  # Replace with the path to your compiled shared library
 
 # Define the matrix multiplication function signature
-matmul = lib.simd_matmul
+matmul = lib.matmul
 matmul.argtypes = [
     ctypes.POINTER(ctypes.c_float),  # Result matrix
     ctypes.POINTER(ctypes.c_float),  # Matrix 1
