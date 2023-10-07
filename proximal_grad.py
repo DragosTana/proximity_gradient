@@ -2,16 +2,37 @@
 # Description: Implementation of proximal gradient descent solver for Logistic Regression.
 
 import numpy as np
+from _loss import LossLogisticRegression
 
-def proximity_operator(coef, C):
-    new_coef = np.zeros_like(coef)
-    new_coef[1:] = np.sign(coef[1:]) * np.maximum(np.abs(coef[1:]) - C, 0)
+def proximal_operator(w, C, penalty):
+    if penalty == 'l2':
+        return w / (1 + 2 * C)
+    elif penalty == 'l1':
+        return np.sign(w) * np.maximum(np.abs(w) - C, 0)
+
+def proximal_gradient(X, y, C, fit_intercept, penalty, max_iter, tol):
+
+    n_samples, n_features = X.shape
+    coef = np.zeros(n_features + 1) if fit_intercept else np.zeros(n_features)
+    intercept = 0.0
+    n_iter = 0
     
-    return new_coef
-
-def proximal_gradient(X, y, C, penalty, fit_intercept, max_iter, tol):
-
-    coef = np.zeros(X.shape[1])
+    loss = LossLogisticRegression(C=C, penalty=penalty)
+    fun = loss._total_loss
+    grad = loss._gradient
     
-    for i in range(max_iter):
-        coef = proximity_operator
+    while n_iter < max_iter:
+        
+        grad_coef = grad(X, y, coef)
+        coef_new = coef - grad_coef
+        coef_new = proximal_operator(coef_new, C, penalty)
+        
+        coef_diff = np.linalg.norm(coef_new - coef)
+        if coef_diff < tol:
+            break
+        
+        coef = coef_new
+        n_iter += 1
+        
+    return coef, intercept, n_iter
+        

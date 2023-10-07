@@ -1,11 +1,16 @@
 # Author: Dragos Tanasa
 # Description: Implementation of Logistic Regression classifier compatible with sklearn.
 
+import os
+os.environ['OMP_NUM_THREADS'] = '1'
+
 import numpy as np
 import scipy.optimize as opt
+from scipy.special import xlogy, expit
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.svm._base import _fit_liblinear
+
 
 from _loss import LossLogisticRegression
 from proximal_grad import proximal_gradient
@@ -143,15 +148,14 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             
         elif solver == 'proximal_grad':
             self.coef_, self.intercept_, self.n_iter_ = proximal_gradient(
-                X,
-                y,
-                self.C,
-                self.penalty,
-                self.fit_intercept,
-                self.max_iter,
-                self.tol
+                X = X,
+                y = y,
+                C = self.C,
+                fit_intercept = self.fit_intercept,
+                penalty = self.penalty,
+                max_iter = self.max_iter,
+                tol = self.tol,
             )
-                
             
     def predict(self, X):
         """
@@ -163,12 +167,26 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
         """
         check_is_fitted(self)
         X = check_array(X, accept_sparse='csr', order="C")
-        
         y_pred = np.dot(X, self.coef_.T)
         y_pred = np.sign(y_pred)
         y_pred[y_pred == -1] = 0
         return y_pred
             
+    def predict_proba(self, X):
+        """
+        Probability estimates.
+        
+        The returned estimates for all classes are ordered by the label of classes.
+        
+        ## Parameters:
+        X : array-like of shape (n_samples, n_features)
+            Samples.
+        """
+        check_is_fitted(self)
+        X = check_array(X, accept_sparse='csr', order="C")
+        y_pred = (X @ self.coef_.T).ravel()
+        expit(y_pred, out=y_pred)
+        return np.vstack((1 - y_pred, y_pred)).T
             
             
 if __name__ == "__main__":
@@ -182,14 +200,14 @@ if __name__ == "__main__":
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
     
-    lr = LogisticRegression(penalty='l2', C=1.0, solver='liblinear', max_iter=1000, tol=1e-4, verbose=0)
-    my_lr = MyLogisticRegression(penalty='l2', C=1.0, solver='liblinear', max_iter=1000, tol=1e-4, verbose=0)
+    lr = LogisticRegression(penalty="l2", C=1.0, solver='lbfgs', max_iter=1000, tol=1e-4, verbose=0, fit_intercept=False, )
+    my_lr = MyLogisticRegression(penalty="l2", C=1.0, solver='lbfgs', max_iter=1000, tol=1e-4, verbose=0, fit_intercept=False)
     
     start = time()
     lr.fit(X_train, y_train)
     print("Sklearn time: ", time() - start)
     
-    y_train[y_train == 0] = -1
+    #y_train[y_train == 0] = -1
     start = time()
     my_lr.fit(X_train, y_train)
     print("My time: ", time() - start)
@@ -200,3 +218,11 @@ if __name__ == "__main__":
     print("My accuracy: ", accuracy_score(y_test, my_y_pred))
     print("Sklearn accuracy: ", accuracy_score(y_test, y_pred))
     
+    my_proba = my_lr.predict_proba(X_test)
+    proba = lr.predict_proba(X_test)
+    
+    if np.allclose(my_proba, proba, atol=1e-4):
+        print("my_proba and proba are equal")
+    else:
+        print("my_proba and proba are not equal")
+

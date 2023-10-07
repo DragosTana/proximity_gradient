@@ -3,6 +3,16 @@ from numba import jit, prange
 from sklearn.metrics import log_loss
 from scipy.special import xlogy, expit
 
+#! TODO: 
+#     - the loss is not exactly the same as sklearn's. This is because probabily predicted by scikit-learn 
+#       are slightly different from the ones predicted by this implementation --> investigate why in lines 38-39
+#     - add intercept
+#     - reimplement the _check_solver function from _utils.py
+
+#! BUGS:
+#    - my logistic regression implementation is not the same as sklearn's when using lbfgs solver
+
+
 class LossLogisticRegression:
     """
     Class for the logistic regression loss function.
@@ -28,7 +38,7 @@ class LossLogisticRegression:
         self.coef_ = None  
         self.normalize = normalize
 
-    def _logistic_loss(self, X, y, coef): 
+    def _logistic_loss(self, coef, X, y): 
         z = (X @ coef.T).ravel()
         expit(z, out=z)
         loss = -(xlogy(y, z) + xlogy(1 - y, 1 - z)).sum() 
@@ -50,7 +60,7 @@ class LossLogisticRegression:
         return l2_loss
 
     def _total_loss(self, coef, X, y):
-        log_loss = self._logistic_loss(X, y, coef.T)
+        log_loss = self._logistic_loss(coef, X, y)
         reg_loss = 0.0
 
         if self.penalty == "l1":
@@ -62,18 +72,29 @@ class LossLogisticRegression:
         return total_loss
 
     def _gradient(self, coef, X, y):
-        z = np.dot(X, coef.T)
-        exp_z = np.exp(-y * z)
-        grad_log_loss = -y * exp_z / (1 + exp_z)
+        """
+        This must be a function of the form:
+            jac(x, *args) -> array_like, shape (n,)
+        for the scipy.optimize.minimize function.
+        """
+        z = (X @ coef.T).ravel()
+        expit(z, out=z)
+        diff = expit(z) - y
+        grad_log_loss = X.T @ diff
 
-        reg_grad = np.zeros_like(coef)
+        grad_reg = np.zeros_like(coef)
+
         if self.penalty == "l1":
-            reg_grad = self.C * np.sign(coef)
+            grad_reg = self.C * np.sign(coef)
         elif self.penalty == "l2":
-            reg_grad = self.C * coef
+            grad_reg = self.C * coef
+        gradient = grad_log_loss + grad_reg
 
-        total_grad = np.dot(X.T, grad_log_loss) + reg_grad
-        return total_grad
+        if self.normalize:
+            gradient /= len(y)
+
+        return gradient.ravel()
+    
     
 if __name__ == "__main__":
     from sklearn.linear_model import LogisticRegression
@@ -81,22 +102,18 @@ if __name__ == "__main__":
     from sklearn.model_selection import train_test_split
     from time import time
     
-    
     X, y = make_classification(100, n_features=2, n_informative=2, n_redundant=0, n_repeated=0, n_classes=2)
-    
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-    
     lr = LogisticRegression(penalty = "l2", C=1.0, solver="saga", max_iter=1000)
     lr.fit(X_train, y_train)
-    
     loss = LossLogisticRegression(C=1.0)
     
     y_pred = lr.predict_proba(X_test)
-    
-    print("sklearn log loss: ", log_loss(y_test, lr.predict_proba(X_test), normalize=False))
-    loss = loss._logistic_loss(X_test, y_test, lr.coef_)
+    print("sklearn log loss: ", log_loss(y_test, y_pred, normalize=False))
+    loss = loss._logistic_loss(lr.coef_, X_test, y_test)
     print("LossLogisticRegression log loss: ", loss)
-  
-    
-    
-    
+
+    loss = LossLogisticRegression(C=1.0)
+    grad = loss._gradient(lr.coef_, X_test, y_test)
+    print(grad.shape)
+    print("LossLogisticRegression gradient: ", grad)
