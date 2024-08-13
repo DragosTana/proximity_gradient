@@ -10,10 +10,10 @@ from scipy.special import xlogy, expit
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.svm._base import _fit_liblinear
-
+from sklearn.metrics import accuracy_score
 
 from _loss import LossLogisticRegression
-from proximal_grad import proximal_gradient, coordinate_descent_l1_logistic_regression
+from _proximal_grad import proximal_gradient, coordinate_descent_l1_logistic_regression
 import _utils as u
 
 class MyLogisticRegression(BaseEstimator, ClassifierMixin):
@@ -21,17 +21,17 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
     Logistic Regression classifier.
 
     ## Parameters:
-    penalty : str, 'l1' or 'l2', default: 'l2'
+    - penalty : str, 'l1' or 'l2', default: 'l2'
         Used to specify the norm used in the penalization.
 
-    C : float, default: 1.0
+    - C : float, default: 1.0
         Inverse of regularization strength; must be a positive float.
         Like in support vector machines, smaller values specify stronger regularization.
 
-    fit_intercept : bool, default: True
+    - fit_intercept : bool, default: True
         Specifies if a constant (a.k.a. bias or intercept) should be added to the decision function.
 
-    solver : {'lbfgs', 'liblinear', 'proximal_gra'}, default: 'lbfgs'
+    - solver : {'lbfgs', 'liblinear', 'proximal_gra'}, default: 'lbfgs'
         Algorithm to use in the optimization problem.
 
         ..warning::
@@ -42,16 +42,16 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                 - 'liblinear'       -   'l1', 'l2'
                 - 'proximal_grad'   -   'l1'
 
-    dual : bool, default: False
+    - dual : bool, default: False
         Dual or primal formulation. Dual formulation is only implemented for l2 penalty with liblinear solver.
 
-    maxc_iter : int, default: 100
+    - max_iter : int, default: 100
         Maximum number of iterations taken for the solvers to converge.
 
-    tol : float, default: 1e-4
+    - tol : float, default: 1e-4
         Tolerance for stopping criteria.
 
-    verbose : int, default: 0
+    - verbose : int, default: 0
         For the liblinear and lbfgs solvers set verbose to any positive number for verbosity.
     """
 
@@ -84,14 +84,14 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
         Fit the model according to the given training data.
 
         ## Parameters:
-        X : array-like of shape (n_samples, n_features)
+        - X : array-like of shape (n_samples, n_features)
             Training vector, where n_samples is the number of samples and n_features is the number of features.
 
-        y : array-like of shape (n_samples,)
+        - y : array-like of shape (n_samples,)
             Target vector relative to X.
 
         ## Returns:
-        self : object
+        - self : object
             Returns self, fitted estimator.
         """
 
@@ -113,7 +113,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             print("reformulated")
             fun = self.loss.reformulated_loss_gradient
             iprint = [-1, 50, 1, 100, 101][np.searchsorted(np.array([0, 1, 2, 3]), self.verbose)]
-            n_features = X.shape[1]
+            n_features = X.shape[1] + 1 if self.fit_intercept else X.shape[1]
             initial_uv = np.zeros(2 * n_features, order="F", dtype=X.dtype)
             bounds = [(0, None) for _ in range(2 * n_features)]
             optimizer = opt.minimize(
@@ -133,16 +133,19 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             )
             u_opt = optimizer.x[:n_features]
             v_opt = optimizer.x[n_features:]
-            self.coef_ = u_opt - v_opt
+            w_opt = u_opt - v_opt
+            self.coef_ = w_opt[1:] if self.fit_intercept else w_opt
+            self.intercept_ = w_opt[0] if self.fit_intercept else 0
             self.n_iter_ = optimizer.nit
 
         else:
             if solver == 'lbfgs':
                 fun = self.loss.loss_gradient
                 iprint = [-1, 50, 1, 100, 101][np.searchsorted(np.array([0, 1, 2, 3]), self.verbose)]
+                x0 = np.zeros(X.shape[1]+1, order="F", dtype=X.dtype) if self.fit_intercept else np.zeros(X.shape[1], order="F", dtype=X.dtype)
                 optimizer = opt.minimize(
                     fun=fun,
-                    x0=np.zeros(X.shape[1], order="F", dtype=X.dtype),
+                    x0=x0,
                     args=(X, y),
                     method='L-BFGS-B',
                     jac=True,
@@ -154,7 +157,8 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                         "ftol": 64 * np.finfo(float).eps,
                     },
                 )
-                self.coef_ = optimizer.x
+                self.coef_ = optimizer.x[1:] if self.fit_intercept else optimizer.x
+                self.intercept_ = optimizer.x[0] if self.fit_intercept else 0
                 self.n_iter_ = optimizer.nit
 
             elif solver == 'liblinear':
@@ -196,7 +200,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
         """
         check_is_fitted(self)
         X = check_array(X, accept_sparse='csr', order="C")
-        y_pred = np.dot(X, self.coef_.T)
+        y_pred = np.dot(X, self.coef_.T) + self.intercept_
         y_pred = np.sign(y_pred)
         y_pred[y_pred == -1] = 0
         return y_pred
@@ -229,61 +233,3 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             True labels for X.
         """
         return accuracy_score(y, self.predict(X))
-
-
-if __name__ == "__main__":
-    from sklearn.datasets import make_classification
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import accuracy_score
-    from sklearn.linear_model import LogisticRegression
-    from time import time
-
-    X, y = make_classification(10000, n_features=60, n_informative=60, n_redundant=0, n_repeated=0, n_classes=2)
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
-    penalty = "l1"
-    solver = "liblinear"
-    lr = LogisticRegression(penalty=penalty,
-                            C=1.0,
-                            solver=solver,
-                            max_iter=1000,
-                            tol=1e-4,
-                            verbose=0,
-                            fit_intercept=False)
-
-    my_lr = MyLogisticRegression(penalty=penalty,
-                                C=1.0,
-                                solver="proximal_grad",
-                                max_iter=1000,
-                                tol=1e-4,
-                                verbose=0,
-                                fit_intercept=False,
-                                reformulated=False)
-
-    start = time()
-    lr.fit(X_train, y_train)
-    print("Sklearn time: ", time() - start)
-
-    #y_train[y_train == 0] = -1
-    start = time()
-    my_lr.fit(X_train, y_train)
-    print("My time: ", time() - start)
-
-    print("Sklearn score: ", lr.score(X_test, y_test))
-    print("My score: ", my_lr.score(X_test, y_test))
-
-    my_proba = my_lr.predict_proba(X_test)
-    proba = lr.predict_proba(X_test)
-
-    print("Sklearn coef: ", lr.coef_)
-    print("My coef: ", my_lr.coef_)
-
-    if np.allclose(lr.coef_, my_lr.coef_, atol=1e-3):
-        print("my_coef and coef are equal")
-    else:
-        print("my_coef and coef are not equal")
-
-    if np.allclose(my_proba, proba, atol=1e-4):
-        print("my_proba and proba are equal")
-    else:
-        print("my_proba and proba are not equal")

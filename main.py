@@ -1,59 +1,59 @@
-import ctypes
-import numpy as np
-import time
 
-# Load the C++ shared library
-lib = ctypes.CDLL('./fast_proximal_grad/matmul.so')  # Replace with the path to your compiled shared library
+if __name__ == "__main__":
+    from sklearn.datasets import make_classification
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import accuracy_score
+    from sklearn.linear_model import LogisticRegression
+    from logistic_regression import MyLogisticRegression
+    from time import time
+    import numpy as np
 
-# Define the matrix multiplication function signature
-matmul = lib.matmul
-matmul.argtypes = [
-    ctypes.POINTER(ctypes.c_float),  # Result matrix
-    ctypes.POINTER(ctypes.c_float),  # Matrix 1
-    ctypes.POINTER(ctypes.c_float),  # Matrix 2
-    ctypes.c_int,                    # Rows of Matrix 1
-    ctypes.c_int,                    # Columns of Matrix 1
-    ctypes.c_int                     # Columns of Matrix 2
-]
+    X, y = make_classification(10000, n_features=60, n_informative=60, n_redundant=0, n_repeated=0, n_classes=2)
 
-# Create random matricies of given dimensions aligning memory to 32 byte boundaries
-rows1, cols1 = (6, 6)
-rows2, cols2 = (6, 6)
-matrix1 = np.random.rand(rows1, cols1).astype(np.float32)
-matrix2 = np.random.rand(rows2, cols2).astype(np.float32)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
+    penalty = "l1"
+    solver = "liblinear"
+    lr = LogisticRegression(penalty=penalty,
+                            C=1.0,
+                            solver=solver,
+                            max_iter=1000,
+                            tol=1e-4,
+                            verbose=0,
+                            fit_intercept=True)
 
-def aligned_array(shape, dtype, alignment=32):
-    buffer = np.empty(shape, dtype)
-    if buffer.ctypes.data % alignment != 0:
-        offset = alignment - (buffer.ctypes.data % alignment)
-        buffer = buffer[offset:]
-    return buffer
+    my_lr = MyLogisticRegression(penalty=penalty,
+                                C=1.0,
+                                solver=solver,
+                                max_iter=1000,
+                                tol=1e-4,
+                                verbose=0,
+                                fit_intercept=True,
+                                reformulated=True)
 
+    start = time()
+    lr.fit(X_train, y_train)
+    print("Sklearn time: ", time() - start)
 
-start = time.time()
-C = matrix1 @ matrix2
-end = time.time()
-print("Numpy time: ", end - start)
+    #y_train[y_train == 0] = -1
+    start = time()
+    my_lr.fit(X_train, y_train)
+    print("My time: ", time() - start)
 
-# Create a result matrix
-result = np.zeros((rows1, cols2), dtype=np.float32)
+    print("Sklearn score: ", lr.score(X_test, y_test))
+    print("My score: ", my_lr.score(X_test, y_test))
 
-# Call the C++ function
-start = time.time()
-matmul(result.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-                matrix1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-                matrix2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-                rows1, cols1, cols2)
-end = time.time()
-print("C++ time: ", end - start)
+    my_proba = my_lr.predict_proba(X_test)
+    proba = lr.predict_proba(X_test)
 
-#print (C)
-#print (result)
+    print("Sklearn coef: ", lr.intercept_)
+    print("My coef: ", my_lr.intercept_)
 
-for i in range(rows1):
-    for j in range(cols2):
-        if C[i][j] != result[i][j]:
-            print("i: ", i, " j: ", j, " C: ", C[i][j], " result: ", result[i][j])
-            print("Error")
-            exit(1)
-    
+    if np.allclose(lr.coef_, my_lr.coef_, atol=1e-3):
+        print("my_coef and coef are equal")
+    else:
+        print("my_coef and coef are not equal")
+
+    if np.allclose(my_proba, proba, atol=1e-4):
+        print("my_proba and proba are equal")
+    else:
+        print("my_proba and proba are not equal")

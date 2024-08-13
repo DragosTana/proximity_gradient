@@ -25,18 +25,6 @@ def gradient(w, X, y):
 def soft_thresholding(v, lambda_):
     return np.sign(v) * np.maximum(np.abs(v) - lambda_, 0)
 
-def proximal_gradient(X, y, lambda_, max_iter, tol):
-    n = X.shape[1]
-    w = np.zeros(n)
-    for k in range(max_iter):
-        v = w - 1 * gradient(w, X, y)
-        x = soft_thresholding(v, lambda_ * 1)
-        if np.linalg.norm(x - w, ord = 2) < tol:
-            print("Converged in", k, "iterations.")
-            return x, None, k
-
-    return x, None, max_iter
-
 def coordinate_descent_l1_logistic_regression(X, y, lambda_, max_iter=1000, tol=1e-4):
     n_samples, n_features = X.shape
     weights = np.zeros(n_features)
@@ -58,10 +46,20 @@ def coordinate_descent_l1_logistic_regression(X, y, lambda_, max_iter=1000, tol=
             delta = gradient / hessian
             weights[j] -= delta
 
-            # Apply soft thresholding
             weights[j] = soft_thresholding(weights[j], lambda_ / hessian)
 
         if np.linalg.norm(weights - weights_old) < tol:
             break
 
-    return weights, None, None
+    return weights, None, max_iter
+
+def proximal_gradient(X, y, lambda_, max_iter, tol):
+    n = X.shape[1]
+    w = np.zeros(n)
+    for k in range(max_iter):
+        v = w - 1 * gradient(w, X, y)
+        x = soft_thresholding(v, lambda_ * 1)
+        if np.linalg.norm(x - w) < tol:
+            return x, None, k
+
+    return x, None, max_iter
