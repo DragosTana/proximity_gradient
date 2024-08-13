@@ -2,6 +2,7 @@ import numpy as np
 from numba import jit, prange
 from sklearn.metrics import log_loss
 from scipy.special import xlogy, expit
+from _utils import fast_matmul
 
 class LossLogisticRegression:
     """
@@ -25,11 +26,11 @@ class LossLogisticRegression:
         ):
         self.C = C
         self.penalty = penalty
-        self.coef_ = None
         self.normalize = normalize
 
     def _logistic_loss(self, coef, X, y):
         z = (X @ coef.T).ravel()
+        #z = fast_matmul(X, coef).ravel()
         expit(z, out=z)
         loss = -(xlogy(y, z) + xlogy(1 - y, 1 - z)).sum()
         if self.normalize:
@@ -39,6 +40,7 @@ class LossLogisticRegression:
 
     def _logistic_loss_sklearn(self, coef, X, y):
         z = (X @ coef.T).ravel()
+        #z = fast_matmul(X, coef).ravel()
         expit(z, out=z)
         loss = log_loss(y, z, normalize=self.normalize)
         return loss, z
@@ -65,9 +67,11 @@ class LossLogisticRegression:
 
     def _gradient(self, coef, X, y):
         z = (X @ coef.T).ravel()
+        #z = fast_matmul(X, coef).ravel()
         expit(z, out=z)
         error = z - y
         grad_log_loss = X.T @ error
+        #grad_log_loss = fast_matmul(X, error)
         grad_reg = np.zeros_like(coef)
         if self.penalty == "l1":
             grad_reg = self.C * np.sign(coef)
@@ -83,27 +87,12 @@ class LossLogisticRegression:
         grad = self._gradient(coef, X, y)
         return loss, grad
 
-
-if __name__ == "__main__":
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.datasets import make_classification
-    from sklearn.model_selection import train_test_split
-    from time import time
-
-    X, y = make_classification(100, n_features=2, n_informative=2, n_redundant=0, n_repeated=0, n_classes=2)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-    lr = LogisticRegression(penalty = "l2", C=1.0, solver="saga", max_iter=1000, fit_intercept=False)
-    lr.fit(X_train, y_train)
-    print(lr.coef_)
-    print(lr.intercept_)
-    loss = LossLogisticRegression(C=1.0, penalty=None)
-
-    y_pred = lr.predict_proba(X_test)
-    print("sklearn log loss: ", log_loss(y_test, y_pred, normalize=False))
-    loss, _ = loss._logistic_loss(lr.coef_, X_test, y_test)
-    print("LossLogisticRegression log loss: ", loss)
-
-    loss = LossLogisticRegression(C=1.0)
-    grad = loss._gradient(lr.coef_, X_test, y_test)
-    print(grad.shape)
-    print("LossLogisticRegression gradient: ", grad)
+    def reformulated_loss_gradient(self, uv, X, y):
+        u, v = uv[:len(uv)//2], uv[len(uv)//2:]
+        input = u - v
+        loss, _ = self._logistic_loss_sklearn(input, X, y)
+        loss += self.C * np.sum(u + v)
+        grad_log_loss = self._gradient(input, X, y)
+        grad_u = grad_log_loss + self.C * np.ones_like(u)
+        grad_v = -grad_log_loss + self.C * np.ones_like(v)
+        return loss, np.concatenate((grad_u, grad_v))

@@ -61,7 +61,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
         C=1.0,
         fit_intercept=True,
         solver='lbfgs',
-        dual=False,
+        reformulated=False,
         max_iter=100,
         tol=1e-4,
         verbose=0,
@@ -70,7 +70,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
         self.C = C
         self.fit_intercept = fit_intercept
         self.solver = solver
-        self.dual = dual
+        self.reformulated = reformulated
         self.max_iter = max_iter
         self.tol = tol
         self.verbose = verbose
@@ -95,7 +95,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             Returns self, fitted estimator.
         """
 
-        solver = u._check_solver(self.solver, self.penalty, self.dual)
+        solver = u._check_solver(self.solver, self.penalty, self.reformulated)
         X, y = check_X_y(X, y, accept_sparse='csr', order="C", dtype=np.float64)
 
         self.classes_ = np.unique(y)
@@ -109,14 +109,15 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                 % classes_[0]
             )
 
-        if solver == 'lbfgs':
-            fun = self.loss.loss_gradient
+        if self.reformulated:
+            fun = self.loss.reformulated_loss_gradient
             iprint = [-1, 50, 1, 100, 101][np.searchsorted(np.array([0, 1, 2, 3]), self.verbose)]
-            sw_sum = np.sum(np.abs(y))
-            n_threads = 16
+            n_features = X.shape[1]
+            initial_uv = np.zeros(2 * n_features, order="F", dtype=X.dtype)
+            bounds = [(0, None) for _ in range(2 * n_features)]
             optimizer = opt.minimize(
                 fun=fun,
-                x0=np.zeros(X.shape[1], order="F", dtype=X.dtype),
+                x0=initial_uv,
                 args=(X, y),
                 method='L-BFGS-B',
                 jac=True,
@@ -127,40 +128,66 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                     "gtol": self.tol,
                     "ftol": 64 * np.finfo(float).eps,
                 },
+                bounds=bounds,
             )
-            self.coef_ = optimizer.x
+            u_opt = optimizer.x[:n_features]
+            v_opt = optimizer.x[n_features:]
+            self.coef_ = u_opt - v_opt
             self.n_iter_ = optimizer.nit
 
-        elif solver == 'liblinear':
-            self.coef_, self.intercept_, self.n_iter_ = _fit_liblinear(
-                X = X,
-                y = y,
-                C = self.C,
-                fit_intercept = self.fit_intercept,
-                intercept_scaling = 1,
-                class_weight = None,
-                penalty = self.penalty,
-                dual = False,
-                verbose = self.verbose,
-                max_iter = self.max_iter,
-                tol = self.tol,
-                random_state = None,
-                multi_class = 'ovr',
-                loss = 'logistic_regression',
-                epsilon = 1e-4,
-                sample_weight = None,
-            )
+        else:
+            if solver == 'lbfgs':
+                fun = self.loss.loss_gradient
+                iprint = [-1, 50, 1, 100, 101][np.searchsorted(np.array([0, 1, 2, 3]), self.verbose)]
+                optimizer = opt.minimize(
+                    fun=fun,
+                    x0=np.zeros(X.shape[1], order="F", dtype=X.dtype),
+                    args=(X, y),
+                    method='L-BFGS-B',
+                    jac=True,
+                    options={
+                        'maxiter': self.max_iter,
+                        'maxls': 50,
+                        "iprint":iprint,
+                        "gtol": self.tol,
+                        "ftol": 64 * np.finfo(float).eps,
+                    },
+                )
+                self.coef_ = optimizer.x
+                self.n_iter_ = optimizer.nit
 
-        elif solver == 'proximal_grad':
-            self.coef_, self.intercept_, self.n_iter_ = proximal_gradient(
-                X = X,
-                y = y,
-                C = self.C,
-                fit_intercept = self.fit_intercept,
-                penalty = self.penalty,
-                max_iter = self.max_iter,
-                tol = self.tol,
-            )
+            elif solver == 'liblinear':
+                self.coef_, self.intercept_, self.n_iter_ = _fit_liblinear(
+                    X = X,
+                    y = y,
+                    C = self.C,
+                    fit_intercept = self.fit_intercept,
+                    intercept_scaling = 1,
+                    class_weight = None,
+                    penalty = self.penalty,
+                    dual = False,
+                    verbose = self.verbose,
+                    max_iter = self.max_iter,
+                    tol = self.tol,
+                    random_state = None,
+                    multi_class = 'ovr',
+                    loss = 'logistic_regression',
+                    epsilon = 1e-4,
+                    sample_weight = None,
+                )
+
+            elif solver == 'proximal_grad':
+                self.coef_, self.intercept_, self.n_iter_ = proximal_gradient(
+                    X = X,
+                    y = y,
+                    C = self.C,
+                    fit_intercept = self.fit_intercept,
+                    penalty = self.penalty,
+                    max_iter = self.max_iter,
+                    tol = self.tol,
+                )
+
+
 
     def predict(self, X):
         """
@@ -217,10 +244,24 @@ if __name__ == "__main__":
     X, y = make_classification(10000, n_features=60, n_informative=60, n_redundant=0, n_repeated=0, n_classes=2)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
-    penalty = "l1"
-    solver = "liblinear"
-    lr = LogisticRegression(penalty=penalty, C=1.0, solver=solver, max_iter=1000, tol=1e-4, verbose=0, fit_intercept=False)
-    my_lr = MyLogisticRegression(penalty=penalty, C=1.0, solver=solver, max_iter=1000, tol=1e-4, verbose=0, fit_intercept=False)
+    penalty = "l2"
+    solver = "lbfgs"
+    lr = LogisticRegression(penalty=penalty,
+                            C=1.0,
+                            solver=solver,
+                            max_iter=1000,
+                            tol=1e-4,
+                            verbose=0,
+                            fit_intercept=False)
+
+    my_lr = MyLogisticRegression(penalty=penalty,
+                                C=1.0,
+                                solver=solver,
+                                max_iter=1000,
+                                tol=1e-4,
+                                verbose=0,
+                                fit_intercept=False,
+                                reformulated=True)
 
     start = time()
     lr.fit(X_train, y_train)

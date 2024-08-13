@@ -18,7 +18,6 @@ def proximal_gradient(X, y, C, fit_intercept, penalty, max_iter, tol):
     n_iter = 0
 
     loss = LossLogisticRegression(C=C, penalty=penalty)
-    fun = loss._total_loss
     grad = loss._gradient
 
     while n_iter < max_iter:
