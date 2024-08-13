@@ -3,34 +3,65 @@
 
 import numpy as np
 from _loss import LossLogisticRegression
+from sklearn.metrics import log_loss
+from scipy.special import xlogy, expit
 
-def proximal_operator(w, C, penalty):
-    if penalty == 'l2':
-        return w / (1 + 2 * C)
-    elif penalty == 'l1':
-        return np.sign(w) * np.maximum(np.abs(w) - C, 0)
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
 
-def proximal_gradient(X, y, C, fit_intercept, penalty, max_iter, tol):
+def logistic_loss(w, X, y):
+    z = (X @ w.T).ravel()
+    expit(z, out=z)
+    loss = log_loss(y, z, normalize=False)
+    return loss, z
 
+def gradient(w, X, y):
+    m = X.shape[0]
+    z = (X @ w.T).ravel()
+    expit(z, out=z)
+    error = z - y
+    return (1/m) * X.T @ error
+
+def soft_thresholding(v, lambda_):
+    return np.sign(v) * np.maximum(np.abs(v) - lambda_, 0)
+
+def proximal_gradient(X, y, lambda_, max_iter, tol):
+    n = X.shape[1]
+    w = np.zeros(n)
+    for k in range(max_iter):
+        v = w - 1 * gradient(w, X, y)
+        x = soft_thresholding(v, lambda_ * 1)
+        if np.linalg.norm(x - w, ord = 2) < tol:
+            print("Converged in", k, "iterations.")
+            return x, None, k
+
+    return x, None, max_iter
+
+def coordinate_descent_l1_logistic_regression(X, y, lambda_, max_iter=1000, tol=1e-4):
     n_samples, n_features = X.shape
-    coef = np.zeros(n_features + 1) if fit_intercept else np.zeros(n_features)
-    intercept = 0.0
-    n_iter = 0
+    weights = np.zeros(n_features)
 
-    loss = LossLogisticRegression(C=C, penalty=penalty)
-    grad = loss._gradient
+    for _ in range(max_iter):
+        weights_old = weights.copy()
 
-    while n_iter < max_iter:
+        for j in range(n_features):
+            X_j = X[:, j]
+            z = np.dot(X, weights)
+            p = sigmoid(z)
 
-        grad_coef = grad(coef=coef, X=X, y=y)
-        coef_new = coef - grad_coef
-        coef_new = proximal_operator(coef_new, C, penalty)
+            gradient = np.dot(X_j, (p - y)) + lambda_ * np.sign(weights[j])
+            hessian = np.dot(X_j**2, p * (1 - p)) + lambda_
 
-        coef_diff = np.linalg.norm(coef_new - coef)
-        if coef_diff < tol:
+            if hessian == 0:
+                continue
+
+            delta = gradient / hessian
+            weights[j] -= delta
+
+            # Apply soft thresholding
+            weights[j] = soft_thresholding(weights[j], lambda_ / hessian)
+
+        if np.linalg.norm(weights - weights_old) < tol:
             break
 
-        coef = coef_new
-        n_iter += 1
-
-    return coef, intercept, n_iter
+    return weights, None, None

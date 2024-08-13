@@ -13,7 +13,7 @@ from sklearn.svm._base import _fit_liblinear
 
 
 from _loss import LossLogisticRegression
-from proximal_grad import proximal_gradient
+from proximal_grad import proximal_gradient, coordinate_descent_l1_logistic_regression
 import _utils as u
 
 class MyLogisticRegression(BaseEstimator, ClassifierMixin):
@@ -110,6 +110,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             )
 
         if self.reformulated:
+            print("reformulated")
             fun = self.loss.reformulated_loss_gradient
             iprint = [-1, 50, 1, 100, 101][np.searchsorted(np.array([0, 1, 2, 3]), self.verbose)]
             n_features = X.shape[1]
@@ -177,17 +178,13 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                 )
 
             elif solver == 'proximal_grad':
-                self.coef_, self.intercept_, self.n_iter_ = proximal_gradient(
-                    X = X,
-                    y = y,
-                    C = self.C,
-                    fit_intercept = self.fit_intercept,
-                    penalty = self.penalty,
-                    max_iter = self.max_iter,
-                    tol = self.tol,
+                self.coef_, self.intercept_, self.n_iter_ = coordinate_descent_l1_logistic_regression(
+                    X=X,
+                    y=y,
+                    lambda_=self.C,
+                    max_iter=self.max_iter,
+                    tol=self.tol,
                 )
-
-
 
     def predict(self, X):
         """
@@ -244,8 +241,8 @@ if __name__ == "__main__":
     X, y = make_classification(10000, n_features=60, n_informative=60, n_redundant=0, n_repeated=0, n_classes=2)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
-    penalty = "l2"
-    solver = "lbfgs"
+    penalty = "l1"
+    solver = "liblinear"
     lr = LogisticRegression(penalty=penalty,
                             C=1.0,
                             solver=solver,
@@ -256,12 +253,12 @@ if __name__ == "__main__":
 
     my_lr = MyLogisticRegression(penalty=penalty,
                                 C=1.0,
-                                solver=solver,
+                                solver="proximal_grad",
                                 max_iter=1000,
                                 tol=1e-4,
                                 verbose=0,
                                 fit_intercept=False,
-                                reformulated=True)
+                                reformulated=False)
 
     start = time()
     lr.fit(X_train, y_train)
@@ -278,8 +275,8 @@ if __name__ == "__main__":
     my_proba = my_lr.predict_proba(X_test)
     proba = lr.predict_proba(X_test)
 
-    #print("My proba: ", my_proba)
-    #print("Sklearn proba: ", proba)
+    print("Sklearn coef: ", lr.coef_)
+    print("My coef: ", my_lr.coef_)
 
     if np.allclose(lr.coef_, my_lr.coef_, atol=1e-3):
         print("my_coef and coef are equal")
