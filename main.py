@@ -23,12 +23,12 @@ if __name__ == "__main__":
 
     my_lr = MyLogisticRegression(penalty=penalty,
                                 C=1.0,
-                                solver=solver,
+                                solver="proximal_grad",
                                 max_iter=1000,
                                 tol=1e-4,
                                 verbose=0,
                                 fit_intercept=True,
-                                reformulated=True)
+                                reformulated=False)
 
     start = time()
     lr.fit(X_train, y_train)
@@ -45,8 +45,8 @@ if __name__ == "__main__":
     my_proba = my_lr.predict_proba(X_test)
     proba = lr.predict_proba(X_test)
 
-    print("Sklearn coef: ", lr.intercept_)
-    print("My coef: ", my_lr.intercept_)
+    print("Sklearn intercept: ", lr.intercept_)
+    print("My inctercep: ", my_lr.intercept_)
 
     if np.allclose(lr.coef_, my_lr.coef_, atol=1e-3):
         print("my_coef and coef are equal")

@@ -75,7 +75,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
         self.tol = tol
         self.verbose = verbose
         self.coef_ = None
-        self.loss = LossLogisticRegression(C=self.C, penalty=self.penalty)
+        self.loss = LossLogisticRegression(C=self.C, penalty=self.penalty, fit_intercept=self.fit_intercept)
         self.fun = self.loss.loss
         self.grad = self.loss._gradient
 
@@ -188,6 +188,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                     lambda_=self.C,
                     max_iter=self.max_iter,
                     tol=self.tol,
+                    fit_intercept=self.fit_intercept,
                 )
 
     def predict(self, X):
