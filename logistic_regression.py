@@ -75,7 +75,10 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
         self.tol = tol
         self.verbose = verbose
         self.coef_ = None
-        self.loss = LossLogisticRegression(C=self.C, penalty=self.penalty, fit_intercept=self.fit_intercept)
+        if self.reformulated:
+            self.loss = LossLogisticRegression(C=self.C, penalty=None, fit_intercept=self.fit_intercept)
+        else:
+            self.loss = LossLogisticRegression(C=self.C, penalty=self.penalty, fit_intercept=self.fit_intercept)
         self.fun = self.loss.loss
         self.grad = self.loss._gradient
 
@@ -110,7 +113,6 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             )
 
         if self.reformulated:
-            print("reformulated")
             fun = self.loss.reformulated_loss_gradient
             iprint = [-1, 50, 1, 100, 101][np.searchsorted(np.array([0, 1, 2, 3]), self.verbose)]
             n_features = X.shape[1] + 1 if self.fit_intercept else X.shape[1]
@@ -137,6 +139,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
             self.coef_ = w_opt[1:] if self.fit_intercept else w_opt
             self.intercept_ = w_opt[0] if self.fit_intercept else 0
             self.n_iter_ = optimizer.nit
+            return self
 
         else:
             if solver == 'lbfgs':
@@ -160,6 +163,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                 self.coef_ = optimizer.x[1:] if self.fit_intercept else optimizer.x
                 self.intercept_ = optimizer.x[0] if self.fit_intercept else 0
                 self.n_iter_ = optimizer.nit
+                return self
 
             elif solver == 'liblinear':
                 self.coef_, self.intercept_, self.n_iter_ = _fit_liblinear(
@@ -180,6 +184,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                     epsilon = 1e-4,
                     sample_weight = None,
                 )
+                return self
 
             elif solver == 'proximal_grad':
                 self.coef_, self.intercept_, self.n_iter_ = coordinate_descent_l1_logistic_regression(
@@ -190,6 +195,7 @@ class MyLogisticRegression(BaseEstimator, ClassifierMixin):
                     tol=self.tol,
                     fit_intercept=self.fit_intercept,
                 )
+                return self
 
     def predict(self, X):
         """

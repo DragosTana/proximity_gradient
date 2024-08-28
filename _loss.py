@@ -4,6 +4,8 @@ from sklearn.metrics import log_loss
 from scipy.special import xlogy, expit
 from _utils import fast_matmul
 
+import torch.nn as nn
+
 class LossLogisticRegression:
     """
     Class for the logistic regression loss function with intercept.
@@ -46,6 +48,7 @@ class LossLogisticRegression:
             loss /= self.n
         return loss, z
 
+
     def _logistic_loss_sklearn(self, coef, X, y):
         X = self._add_intercept(X)
         z = (X @ coef.T).ravel()
@@ -76,7 +79,7 @@ class LossLogisticRegression:
     def _gradient(self, coef, X, y):
         X = self._add_intercept(X)
         z = (X @ coef.T).ravel()
-        expit(z, out=z)
+        expit(z, out=z) # expit(x) = 1/(1+exp(-x))
         error = z - y
         grad_log_loss = X.T @ error
         grad_reg = np.zeros_like(coef)

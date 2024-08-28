@@ -2,58 +2,73 @@
 if __name__ == "__main__":
     from sklearn.datasets import make_classification
     from sklearn.model_selection import train_test_split
-    from sklearn.metrics import accuracy_score
+    from sklearn.metrics import accuracy_score, log_loss
     from sklearn.linear_model import LogisticRegression
     from logistic_regression import MyLogisticRegression
     from time import time
     import numpy as np
+    import matplotlib.pyplot as plt
 
-    X, y = make_classification(10000, n_features=60, n_informative=60, n_redundant=0, n_repeated=0, n_classes=2)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
-    penalty = "l1"
-    solver = "liblinear"
-    lr = LogisticRegression(penalty=penalty,
-                            C=1.0,
-                            solver=solver,
-                            max_iter=1000,
-                            tol=1e-4,
-                            verbose=0,
-                            fit_intercept=True)
 
-    my_lr = MyLogisticRegression(penalty=penalty,
-                                C=1.0,
-                                solver="proximal_grad",
-                                max_iter=1000,
-                                tol=1e-4,
-                                verbose=0,
-                                fit_intercept=True,
-                                reformulated=False)
+    dataset_sizes = [100, 500, 1000, 5000, 10000]
+    C = [1, 5, 10]
 
-    start = time()
-    lr.fit(X_train, y_train)
-    print("Sklearn time: ", time() - start)
+    errors = []
+    my_accuracies = []
+    accuracies = []
+    for n in C:
 
-    #y_train[y_train == 0] = -1
-    start = time()
-    my_lr.fit(X_train, y_train)
-    print("My time: ", time() - start)
+        error = []
+        acc = []
+        my_acc = []
+        for i in range(50):
+            print(f"Dataset size: {n}, iteration: {i}")
 
-    print("Sklearn score: ", lr.score(X_test, y_test))
-    print("My score: ", my_lr.score(X_test, y_test))
+            X, y = make_classification(n, n_features=20, n_informative=20, n_redundant=0, n_repeated=0, n_classes=2)
 
-    my_proba = my_lr.predict_proba(X_test)
-    proba = lr.predict_proba(X_test)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
+            penalty = "l1"
+            solver = "liblinear"
+            lr = LogisticRegression(penalty=penalty,
+                                    C=n,
+                                    solver=solver,
+                                    max_iter=5000,
+                                    tol=1e-5,
+                                    verbose=0,
+                                    fit_intercept=False)
 
-    print("Sklearn intercept: ", lr.intercept_)
-    print("My inctercep: ", my_lr.intercept_)
+            my_lr = MyLogisticRegression(penalty=penalty,
+                                        C=n,
+                                        solver="coordinate_descent",
+                                        max_iter=5000,
+                                        tol=1e-5,
+                                        verbose=0,
+                                        fit_intercept=False,
+                                        reformulated=True)
 
-    if np.allclose(lr.coef_, my_lr.coef_, atol=1e-3):
-        print("my_coef and coef are equal")
-    else:
-        print("my_coef and coef are not equal")
+            my_coef = my_lr.fit(X_train, y_train).coef_
+            coef = lr.fit(X_train, y_train).coef_
 
-    if np.allclose(my_proba, proba, atol=1e-4):
-        print("my_proba and proba are equal")
-    else:
-        print("my_proba and proba are not equal")
+            relative_error = np.linalg.norm(my_coef - coef) / np.linalg.norm(coef)
+
+            acc.append(accuracy_score(y_test, lr.predict(X_test)))
+            my_acc.append(accuracy_score(y_test, my_lr.predict(X_test)))
+            error.append(relative_error)
+
+        errors.append(error)
+        accuracies.append(np.mean(acc))
+        my_accuracies.append(np.mean(my_acc))
+
+    fig, ax = plt.subplots(nrows=1, ncols=2)
+    ax[0].plot(C, accuracies, label="sklearn")
+    ax[0].plot(C, my_accuracies, label="my_lr")
+    ax[0].set_xlabel("C")
+    ax[0].set_ylabel("Accuracy")
+    ax[0].legend()
+
+    ax[1].boxplot(errors)
+    ax[1].set_xticklabels(C)
+    ax[1].set_xlabel("C")
+    ax[1].set_ylabel("Error")
+    plt.show()

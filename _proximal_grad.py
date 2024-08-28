@@ -30,7 +30,7 @@ def coordinate_descent_l1_logistic_regression(X,
                                               lambda_,
                                               max_iter=1000,
                                               tol=1e-4,
-                                              fit_intercept=True):
+                                              fit_intercept=False):
 
     n_samples, n_features = X.shape
 
@@ -70,7 +70,6 @@ def coordinate_descent_l1_logistic_regression(X,
             # Apply soft-thresholding to weights but not to intercept
             weights[j] = soft_thresholding(weights[j], lambda_ / hessian)
 
-        # Check for convergence
         if np.linalg.norm(weights - weights_old) < tol and (not fit_intercept or abs(intercept - intercept_old) < tol):
             break
 
